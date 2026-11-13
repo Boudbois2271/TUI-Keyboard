@@ -17,8 +17,6 @@ Things touched but not finished, known issues, and doubts. Remove an entry once 
 ## Not verified on a device
 
 - Holding Ctrl while tapping a letter: `adb input` can't hold one key while tapping another.
-- The emoji page (Fn/emojis transitions, holding Fn, paging, recents) and the reset to letters when
-  the keyboard closes: built and installed, not yet checked on screen.
 - Only tested on one phone (Redmi Note 9T, Android 11, MIUI).
 
 ## Apps
