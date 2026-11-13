@@ -11,13 +11,15 @@ Tab, arrows and an Fn layer. French accents on long press. Kotlin, no network ac
 | Shift | tap, one-shot | Capitals and the PC symbols over the digits. |
 | Fn | tap to lock, or hold | Esc, Home, End, PgUp, PgDn, Tab, Del, and arrows on H J K L. |
 | Sym | tap to toggle | PC punctuation. |
+| Emoji | Fn, then Space (`emojis`) | About 880 emojis on pages, recently used first. ◀ ▶ flip pages. `emojis` goes back to Fn, Fn back to letters. |
 | Ctrl | hold | Letters (and Fn keys) are sent as key events with Ctrl, so apps get real Ctrl+C, Ctrl+R, … |
 
-Backspace repeats while held. The exact key events and text each key sends are specified in
+Backspace repeats while held. The keyboard always reopens on letters, Shift off. The exact key events and text each key sends are specified in
 [`TUIKBfnsignals.md`](https://github.com/Boudbois2271/TUI-Launcher/blob/master/TUIKBfnsignals.md).
 
 Dark and flat, in [TUI-Launcher](https://github.com/Boudbois2271/TUI-Launcher)'s colours. **No
-permissions at all**: no INTERNET, no ads, no analytics, nothing typed is stored or logged.
+permissions at all**: no INTERNET, no ads, no analytics, nothing typed is logged. The only thing stored is the list of recently used emojis, in the
+app's private storage on the phone.
 
 ## Build and install
 
