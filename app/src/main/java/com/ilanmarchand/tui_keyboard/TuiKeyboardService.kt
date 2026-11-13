@@ -355,13 +355,19 @@ class TuiKeyboardService : InputMethodService() {
             })
         }
         row.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-        val loc = IntArray(2)
-        anchor.getLocationOnScreen(loc)
         val window = PopupWindow(row, row.measuredWidth, row.measuredHeight, false).apply {
             isOutsideTouchable = true
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         }
-        window.showAtLocation(anchor, Gravity.NO_GRAVITY, loc[0], loc[1] - row.measuredHeight)
+        // Anchored to the key, so the offsets are relative to it, not to the screen.
+        // Centred over the key, then kept inside the screen width.
+        val loc = IntArray(2)
+        anchor.getLocationOnScreen(loc)
+        val screenWidth = resources.displayMetrics.widthPixels
+        val centredX = (anchor.width - row.measuredWidth) / 2
+        val xOff = centredX.coerceIn(-loc[0], screenWidth - loc[0] - row.measuredWidth)
+        val yOff = -(anchor.height + row.measuredHeight)
+        window.showAsDropDown(anchor, xOff, yOff, Gravity.NO_GRAVITY)
         popup = window
         accentRow = row
     }

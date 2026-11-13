@@ -16,8 +16,6 @@ Things touched but not finished, known issues, and doubts. Remove an entry once 
 ## Not verified on a device
 
 - Holding Ctrl while tapping a letter: `adb input` can't hold one key while tapping another.
-- The accent popup: committing the accent under the finger on release.
-- The Sym page and the half-width keys on the home row.
 - Only tested on one phone (Redmi Note 9T, Android 11, MIUI).
 
 ## Apps
