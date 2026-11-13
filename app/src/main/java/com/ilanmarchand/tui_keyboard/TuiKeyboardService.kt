@@ -66,6 +66,28 @@ class TuiKeyboardService : InputMethodService() {
         ctrlHeld = false
     }
 
+    // The keyboard always reopens on letters with Shift off, whatever page it closed on.
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        resetState()
+    }
+
+    override fun onFinishInputView(finishingInput: Boolean) {
+        super.onFinishInputView(finishingInput)
+        resetState()
+    }
+
+    private fun resetState() {
+        handler.removeCallbacks(longPressRunnable)
+        handler.removeCallbacks(repeatRunnable)
+        dismissPopup()
+        layer = Layer.BASE
+        shift = false
+        fnLocked = false
+        ctrlHeld = false
+        if (keyViews.isNotEmpty()) refreshKeys()
+    }
+
     // Creates the views once, with the widths of the base layer.
     private fun buildKeys() {
         val container = root ?: return
