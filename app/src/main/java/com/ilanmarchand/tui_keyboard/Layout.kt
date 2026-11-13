@@ -8,7 +8,7 @@ import android.view.KeyEvent
 // Every layer has the same shape (5 rows, same key counts and weights), so the
 // service can reuse its views and only change their labels and actions.
 
-enum class Layer { BASE, FN, SYM }
+enum class Layer { BASE, FN, SYM, EMOJI }
 
 sealed interface Action {
     // Text typed on press. `shifted` is used while Shift is on.
@@ -22,6 +22,11 @@ sealed interface Action {
     data object Space : Action
     data object Backspace : Action
     data class ToggleLayer(val layer: Layer) : Action
+
+    // The Space slot of Fn and of the emoji page: opens the emoji page, or goes back to Fn.
+    data object Emojis : Action
+    data object PrevPage : Action
+    data object NextPage : Action
     data object Spacer : Action
 }
 
@@ -87,6 +92,9 @@ object Layout {
         code(KeyEvent.KEYCODE_ENTER, 1.5f),
     )
 
+    // Fn and the emoji page: the space bar is the emoji key.
+    private val fnBottomRow = bottomRow.map { if (it.action == Action.Space) Key(Action.Emojis, it.weight) else it }
+
     // Half a key of comma and period on each side of the a row.
     private val aRowWithPunctuation =
         listOf(Key(Action.Text(","), 0.5f)) + aRow + listOf(Key(Action.Text("."), 0.5f))
@@ -99,7 +107,7 @@ object Layout {
         bottomRow,
     )
 
-    // Fn sends keys and never types text. Fn + Q is Esc, Fn + A is Tab.
+    // Fn sends keys and never types text. Fn + Space opens the emoji page. Fn + Q is Esc, Fn + A is Tab.
     // Fn + W/E/R/T are Home, End, PgUp, PgDn, Fn + D is Del, and Fn + H/J/K/L are
     // the arrows in vim's order (left, down, up, right).
     val fn: List<List<Key>> = listOf(
@@ -125,7 +133,7 @@ object Layout {
             )
         ),
         listOf(shiftKey) + blanks(7) + listOf(backspaceKey),
-        bottomRow,
+        fnBottomRow,
     )
 
     // Sym types text only: the PC punctuation, grouped by where it sits on the PC.
@@ -137,9 +145,25 @@ object Layout {
         bottomRow,
     )
 
-    fun rows(layer: Layer): List<List<Key>> = when (layer) {
+    // Emojis on one page, filled row by row: 10, 10, 9, then 6 after the page keys.
+    const val EMOJIS_PER_PAGE = 35
+
+    fun emoji(page: List<String>): List<List<Key>> {
+        val keys = List(EMOJIS_PER_PAGE) { i -> page.getOrNull(i)?.let { symbol(it) } ?: blank }
+        return listOf(
+            keys.subList(0, 10),
+            keys.subList(10, 20),
+            centred(keys.subList(20, 29)),
+            listOf(Key(Action.PrevPage, 1.5f), Key(Action.NextPage)) + keys.subList(29, 35) +
+                listOf(backspaceKey),
+            fnBottomRow,
+        )
+    }
+
+    fun rows(layer: Layer, emojiPage: List<String> = emptyList()): List<List<Key>> = when (layer) {
         Layer.BASE -> base
         Layer.FN -> fn
         Layer.SYM -> sym
+        Layer.EMOJI -> emoji(emojiPage)
     }
 }

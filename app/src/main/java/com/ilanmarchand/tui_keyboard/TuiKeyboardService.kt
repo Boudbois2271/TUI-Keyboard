@@ -30,6 +30,9 @@ private const val LONG_PRESS_MS = 350L
 private const val REPEAT_START_MS = 400L
 private const val REPEAT_EVERY_MS = 50L
 
+private const val PREFS = "tui_keyboard"
+private const val PREF_RECENT_EMOJIS = "recent_emojis"
+
 class TuiKeyboardService : InputMethodService() {
 
     private var layer = Layer.BASE
@@ -37,8 +40,15 @@ class TuiKeyboardService : InputMethodService() {
     private var ctrlHeld = false
 
     // Fn is a tap to lock the layer, or a hold that lasts only while it is pressed.
+    // From the emoji page, Fn goes back to letters.
+    private enum class FnPress { OPEN, UNLOCK, CLOSE }
     private var fnLocked = false
     private var fnDownAt = 0L
+    private var fnPress = FnPress.OPEN
+
+    // The emoji pages are fixed when the page opens, so recents don't move under the finger.
+    private var emojiPages: List<List<String>> = emptyList()
+    private var emojiPage = 0
 
     private val handler = Handler(Looper.getMainLooper())
     private var root: LinearLayout? = null
@@ -85,6 +95,7 @@ class TuiKeyboardService : InputMethodService() {
         shift = false
         fnLocked = false
         ctrlHeld = false
+        emojiPage = 0
         if (keyViews.isNotEmpty()) refreshKeys()
     }
 
@@ -114,7 +125,7 @@ class TuiKeyboardService : InputMethodService() {
 
     // Rebinds every view to the current layer: label, colors and touch action.
     private fun refreshKeys() {
-        val rows = Layout.rows(layer)
+        val rows = Layout.rows(layer, emojiPages.getOrElse(emojiPage) { emptyList() })
         for ((r, rowKeys) in rows.withIndex()) {
             for ((c, key) in rowKeys.withIndex()) {
                 bind(keyViews[r][c], key)
@@ -126,8 +137,12 @@ class TuiKeyboardService : InputMethodService() {
         val active = isActive(key)
         val label = labelFor(key)
         view.text = label
-        // Multi-letter labels such as Ctrl or Home need a smaller size to fit.
-        view.textSize = if (label.length > 1) 12f else 15f
+        // Emojis are drawn large. Multi-letter labels such as Ctrl or Home need a smaller size to fit.
+        view.textSize = when {
+            layer == Layer.EMOJI && key.action is Action.Text -> 22f
+            label.length > 1 -> 12f
+            else -> 15f
+        }
         view.setTextColor(if (active) BACKGROUND else FOREGROUND)
         view.setBackgroundColor(if (active) ACCENT else KEY_FILL)
         if (key.action == Action.Spacer) {
@@ -164,14 +179,21 @@ class TuiKeyboardService : InputMethodService() {
             Layer.FN -> "Fn"
             Layer.SYM -> "Sym"
             Layer.BASE -> "ABC"
+            Layer.EMOJI -> "emojis"
         }
+        Action.Emojis -> "emojis"
+        Action.PrevPage -> "◀"
+        Action.NextPage -> "▶"
         Action.Spacer -> ""
     }
 
     private fun isActive(key: Key): Boolean = when (key.action) {
         Action.Shift -> shift
         Action.Ctrl -> ctrlHeld
-        is Action.ToggleLayer -> layer == key.action.layer
+        // Fn stays lit on the emoji page, which is reached through it.
+        is Action.ToggleLayer -> layer == key.action.layer ||
+            (key.action.layer == Layer.FN && layer == Layer.EMOJI)
+        Action.Emojis -> layer == Layer.EMOJI
         else -> false
     }
 
@@ -210,7 +232,11 @@ class TuiKeyboardService : InputMethodService() {
         pendingView = view
         when (val action = key.action) {
             is Action.Text -> {
-                if (key.accents.isNotEmpty()) {
+                if (layer == Layer.EMOJI) {
+                    // Emojis are always text, Ctrl or not, and the page stays open.
+                    commit(action.base)
+                    rememberEmoji(action.base)
+                } else if (key.accents.isNotEmpty()) {
                     // Commit on release, so a long press can show the accents instead.
                     handler.postDelayed(longPressRunnable, LONG_PRESS_MS)
                 } else {
@@ -235,15 +261,39 @@ class TuiKeyboardService : InputMethodService() {
                 Layer.FN -> {
                     // A locked Fn is unlocked on release. An unlocked Fn opens now and
                     // closes on release if it was held, or stays open if it was tapped.
+                    // On the emoji page, Fn goes straight back to letters.
                     fnDownAt = SystemClock.uptimeMillis()
-                    if (!fnLocked) setLayer(Layer.FN)
+                    fnPress = when {
+                        layer == Layer.EMOJI -> FnPress.CLOSE
+                        fnLocked -> FnPress.UNLOCK
+                        else -> FnPress.OPEN
+                    }
+                    when (fnPress) {
+                        FnPress.CLOSE -> {
+                            fnLocked = false
+                            setLayer(Layer.BASE)
+                        }
+                        FnPress.OPEN -> setLayer(Layer.FN)
+                        FnPress.UNLOCK -> Unit
+                    }
                 }
                 Layer.SYM -> {
                     fnLocked = false
                     setLayer(if (layer == Layer.SYM) Layer.BASE else Layer.SYM)
                 }
-                Layer.BASE -> setLayer(Layer.BASE)
+                Layer.BASE, Layer.EMOJI -> setLayer(Layer.BASE)
             }
+            Action.Emojis -> {
+                // Both ways keep Fn locked: the emoji page goes back to Fn, not to letters.
+                fnLocked = true
+                if (layer == Layer.EMOJI) {
+                    setLayer(Layer.FN)
+                } else {
+                    openEmojiPage()
+                }
+            }
+            Action.PrevPage -> flipEmojiPage(-1)
+            Action.NextPage -> flipEmojiPage(1)
             Action.Spacer -> Unit
         }
     }
@@ -280,16 +330,46 @@ class TuiKeyboardService : InputMethodService() {
     }
 
     // Decides what releasing Fn does: exit a locked layer, lock on a tap, or leave on a hold.
+    // If the press left the Fn page (emoji page opened while holding, Sym, or Fn closing
+    // the emoji page), the release does nothing.
     private fun releaseFn() {
+        if (layer != Layer.FN) return
         val held = SystemClock.uptimeMillis() - fnDownAt
-        when {
-            fnLocked -> {
+        when (fnPress) {
+            FnPress.UNLOCK -> {
                 fnLocked = false
                 setLayer(Layer.BASE)
             }
-            held < LONG_PRESS_MS -> fnLocked = true
-            else -> setLayer(Layer.BASE)
+            FnPress.OPEN -> if (held < LONG_PRESS_MS) fnLocked = true else setLayer(Layer.BASE)
+            FnPress.CLOSE -> Unit
         }
+    }
+
+    // Recently used emojis come first, on their own page, then every emoji in order.
+    private fun openEmojiPage() {
+        val recent = recentEmojis()
+        emojiPages = (if (recent.isEmpty()) emptyList() else listOf(recent)) +
+            Emoji.all.chunked(Layout.EMOJIS_PER_PAGE)
+        emojiPage = 0
+        setLayer(Layer.EMOJI)
+    }
+
+    // The page keys wrap around: ◀ on the first page goes to the last.
+    private fun flipEmojiPage(step: Int) {
+        if (emojiPages.isEmpty()) return
+        emojiPage = Math.floorMod(emojiPage + step, emojiPages.size)
+        refreshKeys()
+    }
+
+    // Kept on the phone only, in the app's private storage.
+    private fun recentEmojis(): List<String> =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getString(PREF_RECENT_EMOJIS, "")
+            .orEmpty().split('\n').filter { it.isNotEmpty() }
+
+    private fun rememberEmoji(emoji: String) {
+        val recent = (listOf(emoji) + recentEmojis().filter { it != emoji }).take(Layout.EMOJIS_PER_PAGE)
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putString(PREF_RECENT_EMOJIS, recent.joinToString("\n")).apply()
     }
 
     private fun setLayer(target: Layer) {
